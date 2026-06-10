@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PROJEK SEWAAN SEKOLAH-SEKOLAH KUANTAN</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- PapaParse for parsing CSV from Google Sheets -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <!-- Custom Tailwind Configuration -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#1e3a8a', // Dark blue
+                        secondary: '#3b82f6', // Light blue
+                        accent: '#f59e0b', // Amber
+                        background: '#f8fafc', // Light slate
+                        surface: '#ffffff'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            background-color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+
+        /* Loading Spinner */
+        .loader {
+            border: 4px solid #e2e8f0;
+            border-top: 4px solid #1e3a8a;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Toast Animation */
+        @keyframes slideInUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .toast-enter {
+            animation: slideInUp 0.3s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-primary text-white shadow-lg z-20 relative">
+        <div class="px-4 md:px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-white/20 p-2 md:p-3 rounded-xl backdrop-blur-sm">
+                    <i class="fa-solid fa-graduation-cap text-xl md:text-2xl text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg md:text-2xl font-bold tracking-tight uppercase leading-tight">Projek Sewaan Sekolah-Sekolah Kuantan</h1>
+                    <p class="text-xs md:text-sm text-blue-200 font-medium mt-0.5"><i class="fa-solid fa-chart-line mr-1"></i> Dashboard Analitik Pendidikan</p>
+                </div>
+            </div>
+            <div class="hidden lg:flex items-center space-x-2 text-sm bg-blue-900/50 border border-blue-700 px-4 py-2 rounded-full backdrop-blur-sm shadow-inner">
+                <span class="relative flex h-2.5 w-2.5">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                </span>
+                <span class="font-medium tracking-wide">Data Langsung</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-white/90 backdrop-blur-md z-50 flex flex-col items-center justify-center transition-opacity duration-500">
+        <div class="loader mb-6 shadow-lg"></div>
+        <h2 class="text-xl font-bold text-primary mb-2">Memuat Turun Data...</h2>
+        <p class="text-sm text-slate-500 font-medium">Menyambung ke pangkalan data Google Sheets</p>
+    </div>
+
+    <!-- Error Toast Notification (Replaces alert) -->
+    <div id="errorToast" class="fixed bottom-4 right-4 bg-red-600 text-white px-6 py-4 rounded-xl shadow-2xl z-50 hidden items-center space-x-3 toast-enter">
+        <i class="fa-solid fa-circle-exclamation text-2xl"></i>
+        <div>
+            <h4 class="font-bold text-sm">Ralat Sambungan</h4>
+            <p id="errorMsg" class="text-xs text-red-100 mt-1">Gagal memuat turun data.</p>
+        </div>
+        <button onclick="document.getElementById('errorToast').classList.add('hidden')" class="ml-4 text-red-200 hover:text-white transition-colors">
+            <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+    </div>
+
+    <div class="flex flex-1 overflow-hidden relative">
+        
+        <!-- Sidebar Filters -->
+        <aside id="sidebar" class="w-full md:w-80 bg-white border-r border-slate-200 flex flex-col h-full absolute md:relative z-30 transition-transform duration-300 transform -translate-x-full md:translate-x-0 shadow-2xl md:shadow-none">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 sticky top-0 z-10">
+                <h2 class="font-bold text-slate-800 flex items-center"><i class="fa-solid fa-filter mr-2 text-primary"></i> Tapisan Data</h2>
+                <div class="flex items-center space-x-2">
+                    <button id="resetFilters" class="text-xs font-semibold text-secondary hover:text-primary transition-colors bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-100">Set Semula</button>
+                    <button id="closeSidebar" class="md:hidden text-slate-400 hover:text-slate-600 p-1">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="p-5 space-y-6 flex-1 overflow-y-auto">
+                <!-- Filter: Nama Sekolah -->
+                <div class="filter-group">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center">
+                        <i class="fa-solid fa-school text-slate-400 mr-2 w-4"></i> Nama Sekolah
+                    </label>
+                    <select id="filter-sekolah" class="filter-select w-full text-sm border border-slate-300 text-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all bg-white hover:border-slate-400 cursor-pointer shadow-sm appearance-none">
+                        <option value="">Semua Sekolah</option>
+                    </select>
+                </div>
+
+                <!-- Filter: PDT -->
+                <div class="filter-group">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center">
+                        <i class="fa-solid fa-desktop text-slate-400 mr-2 w-4"></i> PDT
+                    </label>
+                    <select id="filter-pdt" class="filter-select w-full text-sm border border-slate-300 text-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all bg-white hover:border-slate-400 cursor-pointer shadow-sm appearance-none">
+                        <option value="">Semua Nilai PDT</option>
+                    </select>
+                </div>
+
+                <!-- Filter: PDP -->
+                <div class="filter-group">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center">
+                        <i class="fa-solid fa-tablet-screen-button text-slate-400 mr-2 w-4"></i> PDP
+                    </label>
+                    <select id="filter-pdp" class="filter-select w-full text-sm border border-slate-300 text-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all bg-white hover:border-slate-400 cursor-pointer shadow-sm appearance-none">
+                        <option value="">Semua Nilai PDP</option>
+                    </select>
+                </div>
+
+                <!-- Filter: Peranti Guru -->
+                <div class="filter-group">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center">
+                        <i class="fa-solid fa-laptop text-slate-400 mr-2 w-4"></i> Peranti Guru
+                    </label>
+                    <select id="filter-perantiguru" class="filter-select w-full text-sm border border-slate-300 text-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all bg-white hover:border-slate-400 cursor-pointer shadow-sm appearance-none">
+                        <option value="">Semua Nilai Peranti</option>
+                    </select>
+                </div>
+
+                <!-- Filter: Nama PTIS Seliaan -->
+                <div class="filter-group">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center">
+                        <i class="fa-solid fa-user-tie text-slate-400 mr-2 w-4"></i> Nama PTIS Seliaan
+                    </label>
+                    <select id="filter-ptis" class="filter-select w-full text-sm border border-slate-300 text-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all bg-white hover:border-slate-400 cursor-pointer shadow-sm appearance-none">
+                        <option value="">Semua PTIS</option>
+                    </select>
+                </div>
+
+                <!-- Filter: Nama Guru Penyelaras ICT -->
+                <div class="filter-group pb-8">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center">
+                        <i class="fa-solid fa-chalkboard-user text-slate-400 mr-2 w-4"></i> Guru Penyelaras ICT
+                    </label>
+                    <select id="filter-guru" class="filter-select w-full text-sm border border-slate-300 text-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all bg-white hover:border-slate-400 cursor-pointer shadow-sm appearance-none">
+                        <option value="">Semua Guru</option>
+                    </select>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Overlay for mobile sidebar -->
+        <div id="sidebarOverlay" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-20 hidden md:hidden transition-opacity"></div>
+
+        <main class="flex-1 bg-slate-50/50 overflow-y-auto w-full">
+            <div class="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
+                
+                <!-- Mobile Filter Toggle -->
+                <button id="openSidebarBtn" class="md:hidden w-full bg-white border border-slate-200 text-primary py-3.5 rounded-xl shadow-sm font-semibold mb-6 flex justify-center items-center hover:bg-slate-50 transition-colors">
+                    <i class="fa-solid fa-sliders mr-2"></i> Buka Penapis Data
+                </button>
+
+                <!-- Scorecards Grid -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
+                    
+                    <!-- Scorecard: Bilangan Sekolah -->
+                    <div class="bg-white rounded-2xl p-5 md:p-6 shadow-sm border border-slate-100 relative overflow-hidden group">
+                        <div class="absolute -right-4 -top-4 w-24 h-24 bg-blue-50 rounded-full transition-transform group-hover:scale-150 duration-500 ease-out z-0"></div>
+                        <div class="relative z-10 flex flex-col h-full justify-between">
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-blue-100 flex items-center justify-center text-primary shadow-inner">
+                                    <i class="fa-solid fa-school text-lg md:text-xl"></i>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 id="score-sekolah" class="text-3xl md:text-4xl font-extrabold text-slate-800 tracking-tight">0</h3>
+                                <p class="text-xs md:text-sm font-semibold text-slate-500 mt-1 uppercase tracking-wider">Bilangan Sekolah</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scorecard: Bilangan Peranti Guru -->
+                    <div class="bg-white rounded-2xl p-5 md:p-6 shadow-sm border border-slate-100 relative overflow-hidden group">
+                        <div class="absolute -right-4 -top-4 w-24 h-24 bg-amber-50 rounded-full transition-transform group-hover:scale-150 duration-500 ease-out z-0"></div>
+                        <div class="relative z-10 flex flex-col h-full justify-between">
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 shadow-inner">
+                                    <i class="fa-solid fa-laptop text-lg md:text-xl"></i>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 id="score-peranti" class="text-3xl md:text-4xl font-extrabold text-slate-800 tracking-tight">0</h3>
+                                <p class="text-xs md:text-sm font-semibold text-slate-500 mt-1 uppercase tracking-wider">Peranti Guru</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scorecard: Bilangan PDT -->
+                    <div class="bg-white rounded-2xl p-5 md:p-6 shadow-sm border border-slate-100 relative overflow-hidden group">
+                        <div class="absolute -right-4 -top-4 w-24 h-24 bg-emerald-50 rounded-full transition-transform group-hover:scale-150 duration-500 ease-out z-0"></div>
+                        <div class="relative z-10 flex flex-col h-full justify-between">
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-inner">
+                                    <i class="fa-solid fa-desktop text-lg md:text-xl"></i>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 id="score-pdt" class="text-3xl md:text-4xl font-extrabold text-slate-800 tracking-tight">0</h3>
+                                <p class="text-xs md:text-sm font-semibold text-slate-500 mt-1 uppercase tracking-wider">Bilangan PDT</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scorecard: Bilangan PDP -->
+                    <div class="bg-white rounded-2xl p-5 md:p-6 shadow-sm border border-slate-100 relative overflow-hidden group">
+                        <div class="absolute -right-4 -top-4 w-24 h-24 bg-purple-50 rounded-full transition-transform group-hover:scale-150 duration-500 ease-out z-0"></div>
+                        <div class="relative z-10 flex flex-col h-full justify-between">
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600 shadow-inner">
+                                    <i class="fa-solid fa-tablet-screen-button text-lg md:text-xl"></i>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 id="score-pdp" class="text-3xl md:text-4xl font-extrabold text-slate-800 tracking-tight">0</h3>
+                                <p class="text-xs md:text-sm font-semibold text-slate-500 mt-1 uppercase tracking-wider">Bilangan PDP</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Data Table Section -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                    <div class="p-5 md:p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white gap-4">
+                        <div>
+                            <h2 class="text-lg md:text-xl font-bold text-slate-800 flex items-center">
+                                <i class="fa-solid fa-table-list text-primary mr-3"></i> Pangkalan Data Terperinci
+                            </h2>
+                            <p class="text-sm text-slate-500 mt-1" id="table-record-count">Memuatkan data...</p>
+                        </div>
+                        <div class="bg-slate-50 px-4 py-2 rounded-lg border border-slate-100">
+                            <span class="text-xs font-semibold text-slate-500 uppercase">Tarikh Kemaskini:</span>
+                            <span class="text-sm font-bold text-slate-700 ml-2" id="currentDate">--</span>
+                        </div>
+                    </div>
+                    
+                    <div class="overflow-x-auto w-full">
+                        <table class="w-full text-left border-collapse min-w-[1000px]" id="dataTable">
+                            <thead class="bg-slate-50 border-b border-slate-200">
+                                <tr>
+                                    <th class="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap w-16 text-center">Bil</th>
+                                    <th class="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[250px]">Nama Sekolah</th>
+                                    <th class="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap text-center">PDT</th>
+                                    <th class="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap text-center">PDP</th>
+                                    <th class="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap text-center">Peranti Guru</th>
+                                    <th class="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Guru Penyelaras ICT</th>
+                                    <th class="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">PTIS Seliaan</th>
+                                    <th class="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap text-center">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody" class="text-sm text-slate-700 divide-y divide-slate-100">
+                                <!-- Data rows will be inserted here dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Empty State -->
+                    <div id="emptyState" class="hidden py-16 flex-col items-center justify-center text-center bg-slate-50/50">
+                        <div class="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
+                            <i class="fa-solid fa-folder-open text-3xl text-slate-300"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-700 mb-1">Tiada Rekod Dijumpai</h3>
+                        <p class="text-sm text-slate-500 max-w-md">Sila ubah atau set semula kriteria tapisan anda untuk melihat senarai data yang tersedia.</p>
+                        <button onclick="document.getElementById('resetFilters').click()" class="mt-4 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg shadow hover:bg-blue-800 transition-colors">
+                            Set Semula Penapis
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Google Sheet CSV URL (As provided by user)
+        const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRbNhkLGoNP974-1iRd7T6X1WcP8shRqnhRmL9qCrVK1DWT4DvYIpZDcIXEkrTbNW-7C8xlbszF_AAO/pub?output=csv";
+
+        // Global State Variables
+        let rawData = [];
+        let filteredData = [];
+
+        // Formatting Date
+        document.getElementById('currentDate').innerText = new Date().toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' });
+
+        /**
+         * Helper function to robustly fetch a key value from a row.
+         * Normalizes keys by removing spaces and non-alphanumeric chars to match exact or partial headers.
+         */
+        function getVal(row, possibleMatches) {
+            if (!row) return "";
+            const keys = Object.keys(row);
+            
+            for (let key of keys) {
+                // Normalize column key from CSV (e.g., "NAMA SEKOLAH" -> "NAMASEKOLAH")
+                let normalizedKey = key.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                
+                for (let match of possibleMatches) {
+                    let normalizedMatch = match.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    if (normalizedKey.includes(normalizedMatch) || normalizedMatch.includes(normalizedKey)) {
+                        return row[key] ? row[key].trim() : "";
+                    }
+                }
+            }
+            return "";
+        }
+
+        // Setup Application on Load
+        document.addEventListener("DOMContentLoaded", () => {
+            fetchData();
+            setupSidebarMobile();
+            setupEventListeners();
+        });
+
+        function fetchData() {
+            Papa.parse(csvUrl, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    // Check if data is valid
+                    if(results.data && results.data.length > 0) {
+                        rawData = results.data;
+                        filteredData = [...rawData];
+                        
+                        // Initialize Dashboard UI
+                        populateFilterDropdowns();
+                        updateDashboard();
+                        
+                        // Hide Loading Overlay Smoothly
+                        const loader = document.getElementById('loadingOverlay');
+                        loader.style.opacity = '0';
+                        setTimeout(() => loader.style.display = 'none', 500);
+                    } else {
+                        showError("Format data tidak sah atau helaian kosong.");
+                    }
+                },
+                error: function(err) {
+                    console.error("Error fetching CSV:", err);
+                    showError("Tidak dapat menyambung ke pangkalan data pautan Google Sheets. Sila periksa capaian internet anda.");
+                }
+            });
+        }
+
+        function showError(msg) {
+            const loader = document.getElementById('loadingOverlay');
+            loader.style.display = 'none';
+            
+            const toast = document.getElementById('errorToast');
+            const errorMsg = document.getElementById('errorMsg');
+            errorMsg.innerText = msg;
+            toast.classList.remove('hidden');
+            toast.classList.add('flex');
+        }
+
+        function populateFilterDropdowns() {
+            // Helper to extract, clean, sort, and return unique values for dropdowns
+            const getUniqueValues = (matches) => {
+                const values = rawData.map(row => getVal(row, matches)).filter(v => v !== "" && v !== undefined && v !== null);
+                return [...new Set(values)].sort((a, b) => {
+                    // Sort numerically if possible, else alphabetically
+                    const numA = parseFloat(a);
+                    const numB = parseFloat(b);
+                    if(!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                    return a.localeCompare(b);
+                });
+            };
+
+            // Mapping requested filters to exact or highly probable header names from user prompt
+            const filtersConfig = [
+                { id: 'filter-sekolah', matches: ['NAMASEKOLAH', 'KODSEKOLAH_NAMASEKOLAH', 'SEKOLAH'] },
+                { id: 'filter-pdt', matches: ['PDT'] },
+                { id: 'filter-pdp', matches: ['PDP'] },
+                { id: 'filter-perantiguru', matches: ['PERANTIGURU'] },
+                { id: 'filter-ptis', matches: ['NAMAPTISSELIAAN', 'PTIS'] },
+                { id: 'filter-guru', matches: ['NAMAGURUPENYELARASICT', 'NAMAGURU_PENYELARASICT', 'PENYELARASICT', 'NAMAGURUPENYELARAS'] }
+            ];
+
+            filtersConfig.forEach(f => {
+                const selectEl = document.getElementById(f.id);
+                if(!selectEl) return;
+                
+                const uniqueVals = getUniqueValues(f.matches);
+                
+                uniqueVals.forEach(val => {
+                    const option = document.createElement('option');
+                    option.value = val;
+                    option.textContent = val;
+                    selectEl.appendChild(option);
+                });
+            });
+        }
+
+        function setupSidebarMobile() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            const openBtn = document.getElementById('openSidebarBtn');
+            const closeBtn = document.getElementById('closeSidebar');
+
+            const openSidebar = () => {
+                sidebar.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+                document.body.style.overflow = 'hidden'; // Prevent background scrolling
+            };
+
+            const closeSidebar = () => {
+                sidebar.classList.add('-translate-x-full');
+                overlay.classList.add('hidden');
+                document.body.style.overflow = '';
+            };
+
+            openBtn.addEventListener('click', openSidebar);
+            closeBtn.addEventListener('click', closeSidebar);
+            overlay.addEventListener('click', closeSidebar);
+        }
+
+        function setupEventListeners() {
+            const selects = document.querySelectorAll('.filter-select');
+            selects.forEach(select => {
+                select.addEventListener('change', () => {
+                    // Slight delay to simulate processing for UI feel
+                    applyFilters();
+                });
+            });
+
+            document.getElementById('resetFilters').addEventListener('click', () => {
+                selects.forEach(select => select.value = "");
+                applyFilters();
+            });
+        }
+
+        function applyFilters() {
+            const vSekolah = document.getElementById('filter-sekolah').value;
+            const vPdt = document.getElementById('filter-pdt').value;
+            const vPdp = document.getElementById('filter-pdp').value;
+            const vPeranti = document.getElementById('filter-perantiguru').value;
+            const vPtis = document.getElementById('filter-ptis').value;
+            const vGuru = document.getElementById('filter-guru').value;
+
+            filteredData = rawData.filter(row => {
+                const matchSekolah = vSekolah === "" || getVal(row, ['NAMASEKOLAH', 'SEKOLAH']) === vSekolah;
+                const matchPdt = vPdt === "" || getVal(row, ['PDT']) === vPdt;
+                const matchPdp = vPdp === "" || getVal(row, ['PDP']) === vPdp;
+                const matchPeranti = vPeranti === "" || getVal(row, ['PERANTIGURU']) === vPeranti;
+                const matchPtis = vPtis === "" || getVal(row, ['NAMAPTISSELIAAN', 'PTIS']) === vPtis;
+                const matchGuru = vGuru === "" || getVal(row, ['NAMAGURUPENYELARASICT', 'NAMAGURU_PENYELARASICT', 'PENYELARASICT']) === vGuru;
+
+                return matchSekolah && matchPdt && matchPdp && matchPeranti && matchPtis && matchGuru;
+            });
+
+            updateDashboard();
+        }
+
+        function calculateMetric(data, matches, isCountUnique = false) {
+            if (isCountUnique) {
+                const uniqueSet = new Set();
+                data.forEach(row => {
+                    const val = getVal(row, matches);
+                    if (val) uniqueSet.add(val);
+                });
+                return uniqueSet.size;
+            } else {
+                let totalNumeric = 0;
+                let isNumericCol = false;
+                
+                data.forEach(row => {
+                    const val = getVal(row, matches);
+                    if (val) {
+                        // Clean comma if any before parsing
+                        const parsed = parseFloat(val.replace(/,/g, ''));
+                        if (!isNaN(parsed)) {
+                            totalNumeric += parsed;
+                            isNumericCol = true;
+                        }
+                    }
+                });
+                
+                // If column has numbers, return sum. Else count non-empty text rows.
+                if (isNumericCol) {
+                    return totalNumeric;
+                } else {
+                    return data.filter(row => getVal(row, matches)).length;
+                }
+            }
+        }
+
+        function updateDashboard() {
+            updateScorecards();
+            updateTable();
+        }
+
+        function updateScorecards() {
+            // Metrics requested:
+            // 1. Bilangan Sekolah (Count unique)
+            const countSekolah = calculateMetric(filteredData, ['NAMASEKOLAH', 'SEKOLAH'], true);
+            // 2. Bilangan Peranti Guru (Sum)
+            const countPeranti = calculateMetric(filteredData, ['PERANTIGURU']);
+            // 3. Bilangan PDT (Sum)
+            const countPdt = calculateMetric(filteredData, ['PDT']);
+            // 4. Bilangan PDP (Sum)
+            const countPdp = calculateMetric(filteredData, ['PDP']);
+
+            // Animate Number Counters
+            const animateValue = (id, end) => {
+                const obj = document.getElementById(id);
+                const start = parseInt(obj.innerText.replace(/,/g, '')) || 0;
+                const duration = 500;
+                let startTimestamp = null;
+                
+                if (start === end) {
+                    obj.innerText = end.toLocaleString('ms-MY');
+                    return;
+                }
+
+                const step = (timestamp) => {
+                    if (!startTimestamp) startTimestamp = timestamp;
+                    const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                    // Ease out quart
+                    const easeProgress = 1 - Math.pow(1 - progress, 4);
+                    const current = Math.floor(easeProgress * (end - start) + start);
+                    obj.innerText = current.toLocaleString('ms-MY');
+                    if (progress < 1) {
+                        window.requestAnimationFrame(step);
+                    } else {
+                        obj.innerText = end.toLocaleString('ms-MY');
+                    }
+                };
+                window.requestAnimationFrame(step);
+            };
+
+            animateValue('score-sekolah', countSekolah);
+            animateValue('score-peranti', countPeranti);
+            animateValue('score-pdt', countPdt);
+            animateValue('score-pdp', countPdp);
+        }
+
+        function updateTable() {
+            const tbody = document.getElementById('tableBody');
+            const emptyState = document.getElementById('emptyState');
+            const tableElement = document.getElementById('dataTable');
+            const recordCount = document.getElementById('table-record-count');
+            
+            // Clear current table
+            tbody.innerHTML = '';
+            
+            const totalRecs = filteredData.length;
+            recordCount.innerHTML = `Memaparkan <span class="font-bold text-primary">${totalRecs.toLocaleString('ms-MY')}</span> rekod`;
+
+            if (totalRecs === 0) {
+                tableElement.parentElement.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                emptyState.classList.add('flex');
+            } else {
+                tableElement.parentElement.classList.remove('hidden');
+                emptyState.classList.add('hidden');
+                emptyState.classList.remove('flex');
+
+                filteredData.forEach((row, index) => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'hover:bg-blue-50/40 transition-colors duration-150 group';
+                    
+                    // Fetch values robustly
+                    let kodSekolah = getVal(row, ['KODSEKOLAH']) || '';
+                    let namaSekolah = getVal(row, ['NAMASEKOLAH', 'SEKOLAH']) || '-';
+                    // Combine Kod and Nama if Kod exists and isn't already in Nama
+                    if(kodSekolah && !namaSekolah.includes(kodSekolah)) {
+                        namaSekolah = `<span class="text-xs text-slate-400 block font-mono">${kodSekolah}</span> ${namaSekolah}`;
+                    }
+
+                    const pdt = getVal(row, ['PDT']) || '0';
+                    const pdp = getVal(row, ['PDP']) || '0';
+                    const perantiGuru = getVal(row, ['PERANTIGURU']) || '0';
+                    const guru = getVal(row, ['NAMAGURUPENYELARASICT', 'NAMAGURU_PENYELARASICT', 'PENYELARASICT']) || '-';
+                    const ptis = getVal(row, ['NAMAPTISSELIAAN', 'PTIS']) || '-';
+                    
+                    // Smart Status Badge Formatting
+                    const rawStatus = getVal(row, ['STATUS']) || '-';
+                    let statusClass = "bg-slate-100 text-slate-600 border border-slate-200";
+                    
+                    const statusLower = rawStatus.toLowerCase();
+                    if (statusLower.includes('aktif') || statusLower.includes('selesai') || statusLower === 'ok' || statusLower.includes('berjaya')) {
+                        statusClass = "bg-emerald-50 text-emerald-700 border border-emerald-200";
+                    } else if (statusLower.includes('rosak') || statusLower.includes('tiada') || statusLower.includes('gagal')) {
+                        statusClass = "bg-red-50 text-red-700 border border-red-200";
+                    } else if (statusLower.includes('proses') || statusLower.includes('tunggu') || statusLower.includes('penyelenggaraan')) {
+                        statusClass = "bg-amber-50 text-amber-700 border border-amber-200";
+                    }
+
+                    const statusHtml = `<span class="px-3 py-1 rounded-full text-xs font-bold shadow-sm ${statusClass}">${rawStatus}</span>`;
+
+                    tr.innerHTML = `
+                        <td class="p-4 text-center text-slate-400 font-medium">${index + 1}</td>
+                        <td class="p-4 font-bold text-slate-800 leading-snug">${namaSekolah}</td>
+                        <td class="p-4 text-center">
+                            <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-slate-50 border border-slate-100 font-bold text-slate-700">${pdt}</span>
+                        </td>
+                        <td class="p-4 text-center">
+                            <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-slate-50 border border-slate-100 font-bold text-slate-700">${pdp}</span>
+                        </td>
+                        <td class="p-4 text-center">
+                            <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-slate-50 border border-slate-100 font-bold text-slate-700">${perantiGuru}</span>
+                        </td>
+                        <td class="p-4 text-sm text-slate-600 font-medium">${guru}</td>
+                        <td class="p-4 text-sm text-slate-600 font-medium">${ptis}</td>
+                        <td class="p-4 text-center">${statusHtml}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+    </script>
+</body>
+</html>
